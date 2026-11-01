@@ -9,7 +9,6 @@ import {
 } from 'react'
 
 import { api, type Conversation } from '../lib/api'
-import { connectSocket } from '../lib/socket'
 import { useAuth } from './AuthContext'
 
 type ChatContextValue = {
@@ -44,31 +43,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false
-    setLoading(true)
+    let inFlight = false
 
-    refresh().finally(() => {
+    setLoading(true)
+    void refresh().finally(() => {
       if (!cancelled) setLoading(false)
     })
 
-    const socket = connectSocket()
-    let hasConnected = socket.connected
-
-    const handleNewMessage = () => {
-      void refresh()
-    }
-    const handleConnect = () => {
-      // Fetch again after a reconnect in case messages arrived while offline.
-      if (hasConnected) void refresh()
-      hasConnected = true
+    const poll = () => {
+      if (cancelled || inFlight || document.visibilityState !== 'visible') return
+      inFlight = true
+      void refresh().finally(() => {
+        inFlight = false
+      })
     }
 
-    socket.on('message:new', handleNewMessage)
-    socket.on('connect', handleConnect)
+    const timer = window.setInterval(poll, 4000)
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') poll()
+    }
+
+    document.addEventListener('visibilitychange', handleVisible)
+    window.addEventListener('focus', handleVisible)
 
     return () => {
       cancelled = true
-      socket.off('message:new', handleNewMessage)
-      socket.off('connect', handleConnect)
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisible)
+      window.removeEventListener('focus', handleVisible)
     }
   }, [user, refresh])
 

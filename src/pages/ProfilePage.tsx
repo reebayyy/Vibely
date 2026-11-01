@@ -170,7 +170,7 @@ export function ProfilePage() {
                 Remove photo
               </button>
             )}
-            <span className="hint">JPG, PNG, WebP or GIF · up to 4 MB</span>
+            <span className="hint">JPG, PNG, WebP or GIF · up to 3 MB</span>
           </div>
 
           <input

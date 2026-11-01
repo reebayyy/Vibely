@@ -14,7 +14,6 @@ import {
   storeToken,
   type User,
 } from '../lib/api'
-import { disconnectSocket } from '../lib/socket'
 
 type AuthContextValue = {
   user: User | null
@@ -46,7 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         clearToken()
-        disconnectSocket()
       })
       .finally(() => {
         if (!cancelled) setInitializing(false)
@@ -71,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function signOut() {
     clearToken()
-    disconnectSocket()
     setUserState(null)
   }
 

@@ -1,8 +1,8 @@
 # Social App
 
 A small multi-user social app built with React + TypeScript + Vite, an Express
-API, JWT auth, MongoDB and Socket.IO. Sign in, set up a profile, share photos in a
-global feed, visit other people's profiles and message them directly.
+API, JWT auth and MongoDB. Sign in, set up a profile, share photos in a global
+feed, visit other people's profiles and message them directly.
 
 ## Features
 
@@ -15,7 +15,7 @@ global feed, visit other people's profiles and message them directly.
 - Direct messages:
   - find people by name and start a private conversation
   - inbox with last message, timestamps and unread counts
-  - instant delivery through Socket.IO (history is still stored in MongoDB)
+  - automatic refresh every few seconds (history is stored in MongoDB)
   - unread messages are marked read when you open the conversation
 - Profile page at `/profile`:
   - profile picture upload
@@ -66,74 +66,53 @@ global feed, visit other people's profiles and message them directly.
    ```
 
 5. Open http://localhost:5173 — create an account from the sign-up form, or
-   sign in. Vite proxies `/api`, `/uploads` and `/socket.io` (including
-   WebSockets) to `http://localhost:5000`.
+   sign in. Vite proxies `/api` and `/uploads` to `http://localhost:5000`.
 
 ## Deployment
 
-The recommended free setup is:
+Everything runs on **Vercel** and **MongoDB Atlas** — no separate API host:
 
-- **Vercel** for the Vite frontend
-- **Back4App Containers** for the Express API and Socket.IO server
-- **MongoDB Atlas** for the database and image storage
+- Vercel serves the Vite frontend.
+- `api/index.js` runs the Express API as a Vercel Function at `/api`.
+- Atlas stores users, posts, conversations, messages and images.
 
-Images are stored in an `images` collection in Atlas when the API runs in
-production. Atlas's free tier includes 512 MB; images are limited to 4 MB each.
-For a larger app, add Cloudinary as an optional CDN.
+Vercel Functions cannot keep a Socket.IO connection open, so the chat client
+polls for new messages every 2.5 seconds. Delivery is near-real-time without
+another hosting account.
 
-### 1. Optional Cloudinary
+### 1. Vercel environment variables
 
-Create a free Cloudinary account, open the dashboard and copy the
-`CLOUDINARY_URL` environment variable (`cloudinary://key:secret@cloud-name`).
-When it is present, backend uploads use Cloudinary instead of Atlas. This is
-not required.
-
-### 2. Back4App API
-
-The repository includes a `Dockerfile` and `.dockerignore` for Back4App
-Containers. Back4App's free plan does not require a credit card and supports
-WebSockets.
-
-1. Sign up at [back4app.com](https://www.back4app.com/signup).
-2. Open **Containers**, choose **Create a new app**, and connect GitHub.
-3. Select `reebayyy/Vibely`, branch `main`, root directory `/`, and name the
-   app `vibely-api`.
-4. Add these environment variables:
-
-   ```env
-   MONGODB_URI=mongodb+srv://...
-   JWT_SECRET=a-long-random-string
-   NODE_ENV=production
-   ```
-
-   Back4App provides `PORT=8080`; the Dockerfile and API use it automatically.
-   `CLOUDINARY_URL` is optional and only needed if you want to use Cloudinary
-   instead of Atlas for image storage.
-5. Deploy and wait for the build to finish. The container URL looks like
-   `https://vibely-api.b4a.run`.
-
-In MongoDB Atlas → **Network Access**, allow `0.0.0.0/0`. Back4App containers
-use changing outbound IPs, so a fixed allowlist will not work for the free
-plan.
-
-Back4App's free container sleeps when idle, so the first request afterward can
-take about a minute. Socket.IO works normally while it is awake.
-
-### 3. Vercel frontend
-
-Deploy with build command `npm run build` and output directory `dist`. Add this
-environment variable in Vercel, then redeploy:
+In the Vercel project → **Settings → Environment Variables**, add:
 
 ```env
-VITE_API_URL=https://vibely-api.b4a.run
+MONGODB_URI=mongodb+srv://...
+JWT_SECRET=a-long-random-string
+NODE_ENV=production
 ```
 
-`VITE_SOCKET_URL` is optional and defaults to `VITE_API_URL`. Never put
-`MONGODB_URI`, `JWT_SECRET` or `CLOUDINARY_URL` in a `VITE_*` variable — those
-values are exposed to the browser.
+`STORE_IMAGES=mongo` is optional because `NODE_ENV=production` already selects
+MongoDB. Do **not** set `VITE_API_URL` when the frontend and API share the same
+Vercel domain. Never put `MONGODB_URI` or `JWT_SECRET` in a `VITE_*` variable.
 
-`vercel.json` rewrites client-side routes such as `/feed` and `/messages` back
-to `index.html` so they survive a refresh.
+### 2. Deploy
+
+Push to `main`; Vercel builds the frontend and the function automatically.
+Alternatively, run `vercel --prod`.
+
+In MongoDB Atlas → **Network Access**, allow `0.0.0.0/0`. Vercel Functions use
+changing outbound IPs, so a fixed allowlist will not work.
+
+Check `https://your-project.vercel.app/api/health`; it should return
+`{"ok":true,"service":"social-app-api"}`.
+
+### 3. Image storage
+
+Production uploads go into the `images` collection in Atlas. Atlas's free tier
+includes 512 MB, and each image is limited to **3 MB** so the base64 request
+stays under Vercel's 4.5 MB function limit.
+
+Cloudinary remains optional: set `CLOUDINARY_URL` if you later want a CDN and
+larger images.
 
 Images uploaded locally before deployment keep `/uploads/...` paths. Re-upload
 them from the profile page after the production API is live.
@@ -168,23 +147,26 @@ them from the profile page after the production API is live.
 | POST   | `/api/conversations/:id/messages` | ✓ | Send a text message      |
 | POST   | `/api/conversations/:id/read`     | ✓ | Mark a conversation read |
 
-Only conversation participants can read or send in a thread. New messages are
-emitted over Socket.IO to the recipient's `user:<id>` room.
+Only conversation participants can read or send in a thread. The client polls
+the conversation and inbox endpoints; there is no WebSocket server.
 
 ## Project layout
 
 ```
+api/
+  index.js         Vercel Function entry point (connects to MongoDB)
 server/
-  server.js        Express app, REST routes, Socket.IO server
+  app.js           Express app and all REST routes
+  server.js        Local API process (port 5000)
   config.js        Loads server/.env
   db.js            MongoDB connection + indexes
   .env             Local secrets (git-ignored)
-  uploads/         Uploaded images (git-ignored)
+  uploads/         Local uploaded images (git-ignored)
 src/
   pages/           AuthPage, FeedPage, ProfilePage, UserProfilePage, MessagesPage
   components/      TopBar, route guards, page loader
   context/         AuthContext (session + user), ChatContext (inbox + unread)
-  lib/             API client, Socket.IO client, image/format helpers
+  lib/             API client, image/format helpers
 ```
 
 ## Next steps

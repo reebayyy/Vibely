@@ -1,4 +1,4 @@
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export function validateImage(file: File): string | null {
@@ -6,7 +6,7 @@ export function validateImage(file: File): string | null {
     return 'Please choose a JPEG, PNG, WebP or GIF image.'
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    return 'Images must be 4 MB or smaller.'
+    return 'Images must be 3 MB or smaller.'
   }
   return null
 }

@@ -13,7 +13,6 @@ import {
 import { assetUrl } from '../lib/config'
 import { clockTime, timeAgo } from '../lib/format'
 import { initials } from '../lib/images'
-import { connectSocket } from '../lib/socket'
 
 const MAX_MESSAGE_LENGTH = 2000
 
@@ -85,51 +84,67 @@ export function MessagesPage() {
     }
   }, [activeId, markReadLocal, refresh])
 
-  // Append messages that arrive while this conversation is open.
+  // Poll for new messages while this conversation is open. Vercel Functions
+  // cannot keep a Socket.IO connection open, so this replaces the old socket.
   useEffect(() => {
     if (!activeId) return
 
-    const socket = connectSocket()
-    let hasConnected = socket.connected
+    let cancelled = false
+    let inFlight = false
+    let lastMessageId = ''
 
-    const reloadAfterReconnect = () => {
-      if (!hasConnected) {
-        hasConnected = true
-        return
-      }
+    const poll = async () => {
+      if (cancelled || inFlight || document.visibilityState !== 'visible') return
 
-      void api
-        .listMessages(activeId)
-        .then((response) => {
-          setMessages(response.messages)
-          markReadLocal(activeId)
-          return api.markConversationRead(activeId).then(() => refresh())
+      inFlight = true
+      try {
+        const response = await api.listMessages(activeId)
+        if (cancelled) return
+
+        const nextMessages = response.messages
+        const newest = nextMessages[nextMessages.length - 1]
+
+        setMessages((current) => {
+          const currentNewest = current[current.length - 1]
+          if (
+            current.length === nextMessages.length &&
+            currentNewest?.id === newest?.id
+          ) {
+            return current
+          }
+          return nextMessages
         })
-        .catch(() => undefined)
+
+        if (newest && newest.id !== lastMessageId) {
+          lastMessageId = newest.id
+          markReadLocal(activeId)
+          void api
+            .markConversationRead(activeId)
+            .then(() => refresh())
+            .catch(() => undefined)
+        }
+      } catch {
+        // Keep the current messages; the next poll will retry.
+      } finally {
+        inFlight = false
+      }
     }
 
-    const handleNewMessage = (payload: { message: ChatMessage }) => {
-      if (payload.message.conversationId !== activeId) return
-
-      setMessages((current) =>
-        current.some((message) => message.id === payload.message.id)
-          ? current
-          : [...current, payload.message],
-      )
-
-      markReadLocal(activeId)
-      void api
-        .markConversationRead(activeId)
-        .then(() => refresh())
-        .catch(() => undefined)
+    const timer = window.setInterval(() => {
+      void poll()
+    }, 2500)
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') void poll()
     }
 
-    socket.on('connect', reloadAfterReconnect)
-    socket.on('message:new', handleNewMessage)
+    document.addEventListener('visibilitychange', handleVisible)
+    window.addEventListener('focus', handleVisible)
 
     return () => {
-      socket.off('connect', reloadAfterReconnect)
-      socket.off('message:new', handleNewMessage)
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisible)
+      window.removeEventListener('focus', handleVisible)
     }
   }, [activeId, markReadLocal, refresh])
 
