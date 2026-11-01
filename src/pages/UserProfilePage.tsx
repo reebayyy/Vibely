@@ -5,6 +5,7 @@ import { TopBar } from '../components/TopBar'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { ApiError, api, type Post, type ProfileSummary } from '../lib/api'
+import { assetUrl } from '../lib/config'
 import { timeAgo } from '../lib/format'
 import { initials } from '../lib/images'
 
@@ -96,7 +97,7 @@ export function UserProfilePage() {
             <div className="avatar-row">
               <div className="avatar">
                 {profile.profilePic ? (
-                  <img src={profile.profilePic} alt={`${profile.name}'s profile`} />
+                  <img src={assetUrl(profile.profilePic)} alt={`${profile.name}'s profile`} />
                 ) : (
                   <span>{initials(profile.name) || '?'}</span>
                 )}
@@ -134,7 +135,7 @@ export function UserProfilePage() {
                   {profile.photos.map((photo, index) => (
                     <div className="photo-tile" key={photo}>
                       <img
-                        src={photo}
+                        src={assetUrl(photo)}
                         alt={`${profile.name} photo ${index + 1}`}
                         loading="lazy"
                       />
@@ -158,7 +159,7 @@ export function UserProfilePage() {
               <article className="card post" key={post.id}>
                 <img
                   className="post__image"
-                  src={post.image}
+                  src={assetUrl(post.image)}
                   alt={post.caption || `Photo shared by ${profile.name}`}
                   loading="lazy"
                 />

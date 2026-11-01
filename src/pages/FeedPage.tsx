@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { useAuth } from '../context/AuthContext'
 import { ApiError, api, type Post } from '../lib/api'
+import { assetUrl } from '../lib/config'
 import { timeAgo } from '../lib/format'
 import { fileToDataUrl, initials, validateImage } from '../lib/images'
 
@@ -200,7 +201,7 @@ export function FeedPage() {
             <Link to={`/users/${post.author.id}`} className="post__head post__link">
               <div className="post__avatar">
                 {post.author.profilePic ? (
-                  <img src={post.author.profilePic} alt="" />
+                  <img src={assetUrl(post.author.profilePic)} alt="" />
                 ) : (
                   <span>{initials(post.author.name) || '?'}</span>
                 )}
@@ -213,7 +214,7 @@ export function FeedPage() {
 
             <img
               className="post__image"
-              src={post.image}
+              src={assetUrl(post.image)}
               alt={post.caption || `Photo shared by ${post.author.name}`}
               loading="lazy"
             />

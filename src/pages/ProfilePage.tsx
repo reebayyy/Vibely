@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { useAuth } from '../context/AuthContext'
 import { ApiError, api } from '../lib/api'
+import { assetUrl } from '../lib/config'
 import { fileToDataUrl, initials, validateImage } from '../lib/images'
 
 const MAX_PHOTOS = 9
@@ -145,7 +146,7 @@ export function ProfilePage() {
         <div className="avatar-row">
           <div className="avatar">
             {profilePic ? (
-              <img src={profilePic} alt={`${displayName}'s profile`} />
+              <img src={assetUrl(profilePic)} alt={`${displayName}'s profile`} />
             ) : (
               <span>{initials(displayName) || '?'}</span>
             )}
@@ -227,7 +228,7 @@ export function ProfilePage() {
         <div className="photo-grid">
           {photos.map((photo, index) => (
             <div className="photo-tile" key={photo}>
-              <img src={photo} alt={`Profile photo ${index + 1}`} />
+              <img src={assetUrl(photo)} alt={`Profile photo ${index + 1}`} />
               <button
                 type="button"
                 className="photo-remove"

@@ -10,6 +10,7 @@ import {
   type ChatMessage,
   type UserSearchResult,
 } from '../lib/api'
+import { assetUrl } from '../lib/config'
 import { clockTime, timeAgo } from '../lib/format'
 import { initials } from '../lib/images'
 import { connectSocket } from '../lib/socket'
@@ -222,7 +223,7 @@ export function MessagesPage() {
     return (
       <div className={className}>
         {person.profilePic ? (
-          <img src={person.profilePic} alt="" />
+          <img src={assetUrl(person.profilePic)} alt="" />
         ) : (
           <span>{initials(person.name) || '?'}</span>
         )}

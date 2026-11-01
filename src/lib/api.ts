@@ -1,3 +1,5 @@
+import { API_BASE } from './config'
+
 export type User = {
   id: string
   name: string
@@ -114,7 +116,7 @@ async function request<T>(
 
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch(`${API_BASE}${path}`, {
       method: options.method ?? 'GET',
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
