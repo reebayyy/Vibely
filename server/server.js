@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import bcrypt from 'bcryptjs'
+import { v2 as cloudinary } from 'cloudinary'
 import cors from 'cors'
 import express from 'express'
 import jwt from 'jsonwebtoken'
@@ -39,6 +40,28 @@ const ALLOWED_IMAGE_TYPES = {
 }
 
 await fs.mkdir(UPLOADS_DIR, { recursive: true })
+
+// Cloudinary is optional: local development falls back to server/uploads.
+let cloudinaryReady = false
+let cloudinaryCloudName = ''
+
+if (process.env.CLOUDINARY_URL) {
+  try {
+    const cloudinaryUrl = new URL(process.env.CLOUDINARY_URL)
+    cloudinaryCloudName = cloudinaryUrl.hostname
+    cloudinary.config({
+      cloud_name: cloudinaryCloudName,
+      api_key: decodeURIComponent(cloudinaryUrl.username),
+      api_secret: decodeURIComponent(cloudinaryUrl.password),
+      secure: true,
+    })
+    cloudinaryReady = true
+  } catch {
+    console.warn(
+      'CLOUDINARY_URL is invalid. Image uploads will use server/uploads instead.',
+    )
+  }
+}
 
 const app = express()
 
@@ -192,6 +215,45 @@ function cleanText(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength)
 }
 
+function isStoredImageUrl(value) {
+  if (value.startsWith('/uploads/')) return true
+  if (!cloudinaryReady) return false
+
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'res.cloudinary.com' &&
+      url.pathname.startsWith(`/${cloudinaryCloudName}/image/upload/`)
+    )
+  } catch {
+    return false
+  }
+}
+
+async function storeImage(buffer, extension) {
+  if (!cloudinaryReady) {
+    const filename = `${crypto.randomUUID()}.${extension}`
+    await fs.writeFile(path.join(UPLOADS_DIR, filename), buffer)
+    return `/uploads/${filename}`
+  }
+
+  const uploaded = await new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'vibely', resource_type: 'image' },
+      (error, result) => (error ? reject(error) : resolve(result)),
+    )
+
+    stream.end(buffer)
+  })
+
+  if (!uploaded?.secure_url) {
+    throw new Error('Cloudinary did not return an image URL.')
+  }
+
+  return uploaded.secure_url
+}
+
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
@@ -290,7 +352,7 @@ app.put('/api/profile', authRequired, async (req, res) => {
 
   if (req.body?.profilePic !== undefined) {
     const profilePic = cleanText(req.body.profilePic, 500)
-    if (profilePic && !profilePic.startsWith('/uploads/')) {
+    if (profilePic && !isStoredImageUrl(profilePic)) {
       return res.status(400).json({ error: 'Profile picture must be an uploaded image.' })
     }
     updates.profilePic = profilePic
@@ -304,7 +366,7 @@ app.put('/api/profile', authRequired, async (req, res) => {
     if (photos.length > MAX_PHOTOS) {
       return res.status(400).json({ error: `You can upload up to ${MAX_PHOTOS} photos.` })
     }
-    if (photos.some((photo) => !photo.startsWith('/uploads/'))) {
+    if (photos.some((photo) => !isStoredImageUrl(photo))) {
       return res.status(400).json({ error: 'Photos must be uploaded images.' })
     }
     updates.photos = photos
@@ -649,7 +711,7 @@ app.post('/api/posts', authRequired, async (req, res) => {
   const image = cleanText(req.body?.image, 500)
   const caption = cleanText(req.body?.caption, 300)
 
-  if (!image.startsWith('/uploads/')) {
+  if (!isStoredImageUrl(image)) {
     return res.status(400).json({ error: 'Upload an image before posting.' })
   }
 
@@ -699,10 +761,9 @@ app.post('/api/uploads', authRequired, async (req, res) => {
     return res.status(400).json({ error: 'Images must be 4 MB or smaller.' })
   }
 
-  const filename = `${crypto.randomUUID()}.${ALLOWED_IMAGE_TYPES[mimeType]}`
-  await fs.writeFile(path.join(UPLOADS_DIR, filename), buffer)
+  const url = await storeImage(buffer, ALLOWED_IMAGE_TYPES[mimeType])
 
-  res.status(201).json({ url: `/uploads/${filename}` })
+  res.status(201).json({ url })
 })
 
 // ---------------------------------------------------------------------------
@@ -739,7 +800,11 @@ async function start() {
     }
   }
 
-  httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`))
+  httpServer.listen(PORT, () =>
+    console.log(
+      `Server running on port ${PORT} (images: ${cloudinaryReady ? 'Cloudinary' : 'local disk'})`,
+    ),
+  )
 }
 
 start()

@@ -70,34 +70,59 @@ global feed, visit other people's profiles and message them directly.
 
 ## Deployment
 
-Vercel can host the Vite frontend, but the Express API and Socket.IO server
-need a long-running Node host (for example Render, Railway or Fly.io).
+The recommended free setup is:
 
-1. Deploy the API with `npm run server` and set these environment variables on
-   that host (not in Vercel):
+- **Vercel** for the Vite frontend
+- **Render** for the Express API and Socket.IO server
+- **Cloudinary** for image uploads (Render's free filesystem is temporary)
+- **MongoDB Atlas** for the database
 
-   ```env
-   MONGODB_URI=...
-   JWT_SECRET=...
-   ```
+### 1. Cloudinary
 
-   Allow the host to reach MongoDB Atlas under **Network Access**. Uploaded
-   files live in `server/uploads/`; use a persistent disk or external storage
-   if the host's filesystem is ephemeral.
+Create a free Cloudinary account, open the dashboard and copy the
+`CLOUDINARY_URL` environment variable (`cloudinary://key:secret@cloud-name`).
+Backend uploads use it automatically; without it, images are saved to
+`server/uploads/` for local development only.
 
-2. Deploy the frontend to Vercel with build command `npm run build` and output
-   directory `dist`. Add this environment variable, then redeploy:
+### 2. Render API
 
-   ```env
-   VITE_API_URL=https://your-api-host.example.com
-   ```
+The repository includes `render.yaml`. On Render, choose **New → Blueprint**,
+connect this repository and apply the blueprint. When prompted, enter:
 
-   `VITE_SOCKET_URL` is optional and defaults to `VITE_API_URL`. Never put
-   `MONGODB_URI` or `JWT_SECRET` in a `VITE_*` variable — those values are
-   exposed to the browser.
+```env
+MONGODB_URI=...
+CLOUDINARY_URL=cloudinary://...
+```
 
-   `vercel.json` rewrites client-side routes such as `/feed` and `/messages`
-   back to `index.html` so they survive a refresh.
+`JWT_SECRET` is generated automatically. If you prefer a manual Web Service,
+use build command `npm install`, start command `npm run server`, and add the
+same environment variables.
+
+In MongoDB Atlas → **Network Access**, allow the Render host. For a free
+service with changing IPs, `0.0.0.0/0` is the simplest option for a demo.
+
+Render's free service sleeps after 15 minutes of inactivity, so the first
+request afterward can take about a minute. Socket.IO works normally while it
+is awake.
+
+### 3. Vercel frontend
+
+Deploy with build command `npm run build` and output directory `dist`. Add this
+environment variable in Vercel, then redeploy:
+
+```env
+VITE_API_URL=https://your-api-host.onrender.com
+```
+
+`VITE_SOCKET_URL` is optional and defaults to `VITE_API_URL`. Never put
+`MONGODB_URI`, `JWT_SECRET` or `CLOUDINARY_URL` in a `VITE_*` variable — those
+values are exposed to the browser.
+
+`vercel.json` rewrites client-side routes such as `/feed` and `/messages` back
+to `index.html` so they survive a refresh.
+
+Images uploaded locally before switching to Cloudinary keep `/uploads/...`
+paths. Re-upload them from the profile page after the production API is live.
 
 ## Scripts
 
