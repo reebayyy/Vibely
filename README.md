@@ -23,7 +23,8 @@ global feed, visit other people's profiles and message them directly.
   - up to 9 optional gallery photos
   - saved to MongoDB, reloads after a page refresh
 - New accounts start on profile setup; after saving they land on the feed
-- Images are stored on the server in `server/uploads/` and served from `/uploads`
+- Images are stored in Cloudinary in production, or in `server/uploads/` for
+  local development
 
 ## Requirements
 
@@ -73,8 +74,8 @@ global feed, visit other people's profiles and message them directly.
 The recommended free setup is:
 
 - **Vercel** for the Vite frontend
-- **Render** for the Express API and Socket.IO server
-- **Cloudinary** for image uploads (Render's free filesystem is temporary)
+- **Back4App Containers** for the Express API and Socket.IO server
+- **Cloudinary** for image uploads (Back4App's container filesystem is temporary)
 - **MongoDB Atlas** for the database
 
 ### 1. Cloudinary
@@ -84,26 +85,35 @@ Create a free Cloudinary account, open the dashboard and copy the
 Backend uploads use it automatically; without it, images are saved to
 `server/uploads/` for local development only.
 
-### 2. Render API
+### 2. Back4App API
 
-The repository includes `render.yaml`. On Render, choose **New → Blueprint**,
-connect this repository and apply the blueprint. When prompted, enter:
+The repository includes a `Dockerfile` and `.dockerignore` for Back4App
+Containers. Back4App's free plan does not require a credit card and supports
+WebSockets.
 
-```env
-MONGODB_URI=...
-CLOUDINARY_URL=cloudinary://...
-```
+1. Sign up at [back4app.com](https://www.back4app.com/signup).
+2. Open **Containers**, choose **Create a new app**, and connect GitHub.
+3. Select `reebayyy/Vibely`, branch `main`, root directory `/`, and name the
+   app `vibely-api`.
+4. Add these environment variables:
 
-`JWT_SECRET` is generated automatically. If you prefer a manual Web Service,
-use build command `npm install`, start command `npm run server`, and add the
-same environment variables.
+   ```env
+   MONGODB_URI=mongodb+srv://...
+   JWT_SECRET=a-long-random-string
+   CLOUDINARY_URL=cloudinary://...
+   NODE_ENV=production
+   ```
 
-In MongoDB Atlas → **Network Access**, allow the Render host. For a free
-service with changing IPs, `0.0.0.0/0` is the simplest option for a demo.
+   Back4App provides `PORT=8080`; the Dockerfile and API use it automatically.
+5. Deploy and wait for the build to finish. The container URL looks like
+   `https://vibely-api.b4a.run`.
 
-Render's free service sleeps after 15 minutes of inactivity, so the first
-request afterward can take about a minute. Socket.IO works normally while it
-is awake.
+In MongoDB Atlas → **Network Access**, allow `0.0.0.0/0`. Back4App containers
+use changing outbound IPs, so a fixed allowlist will not work for the free
+plan.
+
+Back4App's free container sleeps when idle, so the first request afterward can
+take about a minute. Socket.IO works normally while it is awake.
 
 ### 3. Vercel frontend
 
@@ -111,7 +121,7 @@ Deploy with build command `npm run build` and output directory `dist`. Add this
 environment variable in Vercel, then redeploy:
 
 ```env
-VITE_API_URL=https://your-api-host.onrender.com
+VITE_API_URL=https://vibely-api.b4a.run
 ```
 
 `VITE_SOCKET_URL` is optional and defaults to `VITE_API_URL`. Never put
