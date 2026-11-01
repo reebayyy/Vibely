@@ -41,7 +41,8 @@ const ALLOWED_IMAGE_TYPES = {
 
 await fs.mkdir(UPLOADS_DIR, { recursive: true })
 
-// Cloudinary is optional: local development falls back to server/uploads.
+// Cloudinary is optional; without it, production uses MongoDB and local
+// development falls back to server/uploads.
 let cloudinaryReady = false
 let cloudinaryCloudName = ''
 
@@ -58,10 +59,23 @@ if (process.env.CLOUDINARY_URL) {
     cloudinaryReady = true
   } catch {
     console.warn(
-      'CLOUDINARY_URL is invalid. Image uploads will use server/uploads instead.',
+      'CLOUDINARY_URL is invalid. Image uploads will use the configured fallback.',
     )
   }
 }
+
+// Production containers have an ephemeral filesystem, so images are stored in
+// MongoDB unless Cloudinary is configured. Local development keeps using disk.
+const requestedImageStorage = String(process.env.STORE_IMAGES || '')
+  .trim()
+  .toLowerCase()
+const imageStorage = cloudinaryReady
+  ? 'cloudinary'
+  : requestedImageStorage === 'local'
+    ? 'local'
+    : requestedImageStorage === 'mongo' || process.env.NODE_ENV === 'production'
+      ? 'mongo'
+      : 'local'
 
 const app = express()
 
@@ -217,6 +231,7 @@ function cleanText(value, maxLength) {
 
 function isStoredImageUrl(value) {
   if (value.startsWith('/uploads/')) return true
+  if (/^\/api\/images\/[a-f0-9]{24}$/i.test(value)) return true
   if (!cloudinaryReady) return false
 
   try {
@@ -231,28 +246,77 @@ function isStoredImageUrl(value) {
   }
 }
 
-async function storeImage(buffer, extension) {
-  if (!cloudinaryReady) {
-    const filename = `${crypto.randomUUID()}.${extension}`
-    await fs.writeFile(path.join(UPLOADS_DIR, filename), buffer)
-    return `/uploads/${filename}`
+async function storeImage(buffer, mimeType) {
+  if (imageStorage === 'cloudinary') {
+    const uploaded = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'vibely', resource_type: 'image' },
+        (error, result) => (error ? reject(error) : resolve(result)),
+      )
+
+      stream.end(buffer)
+    })
+
+    if (!uploaded?.secure_url) {
+      throw new Error('Cloudinary did not return an image URL.')
+    }
+
+    return uploaded.secure_url
   }
 
-  const uploaded = await new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: 'vibely', resource_type: 'image' },
-      (error, result) => (error ? reject(error) : resolve(result)),
-    )
+  if (imageStorage === 'mongo') {
+    const result = await getDB().collection('images').insertOne({
+      data: buffer,
+      contentType: mimeType,
+      size: buffer.byteLength,
+      createdAt: new Date(),
+    })
 
-    stream.end(buffer)
-  })
-
-  if (!uploaded?.secure_url) {
-    throw new Error('Cloudinary did not return an image URL.')
+    return `/api/images/${result.insertedId}`
   }
 
-  return uploaded.secure_url
+  const extension = ALLOWED_IMAGE_TYPES[mimeType] || 'jpg'
+  const filename = `${crypto.randomUUID()}.${extension}`
+  await fs.writeFile(path.join(UPLOADS_DIR, filename), buffer)
+  return `/uploads/${filename}`
 }
+
+// ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
+app.get('/api/images/:id', async (req, res, next) => {
+  try {
+    if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
+      return res.status(404).json({ error: 'Image not found.' })
+    }
+
+    const image = await getDB()
+      .collection('images')
+      .findOne(
+        { _id: new ObjectId(req.params.id) },
+        { projection: { data: 1, contentType: 1 } },
+      )
+
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found.' })
+    }
+
+    const bytes = Buffer.isBuffer(image.data)
+      ? image.data
+      : image.data?.buffer
+
+    if (!Buffer.isBuffer(bytes)) {
+      return res.status(404).json({ error: 'Image not found.' })
+    }
+
+    res.set('Cache-Control', 'public, max-age=31536000, immutable')
+    res.type(image.contentType || 'application/octet-stream')
+    return res.send(bytes)
+  } catch (error) {
+    next(error)
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Health
@@ -765,7 +829,7 @@ app.post('/api/uploads', authRequired, async (req, res) => {
     return res.status(400).json({ error: 'Images must be 4 MB or smaller.' })
   }
 
-  const url = await storeImage(buffer, ALLOWED_IMAGE_TYPES[mimeType])
+  const url = await storeImage(buffer, mimeType)
 
   res.status(201).json({ url })
 })
@@ -806,7 +870,7 @@ async function start() {
 
   httpServer.listen(PORT, () =>
     console.log(
-      `Server running on port ${PORT} (images: ${cloudinaryReady ? 'Cloudinary' : 'local disk'})`,
+      `Server running on port ${PORT} (images: ${imageStorage})`,
     ),
   )
 }

@@ -23,8 +23,8 @@ global feed, visit other people's profiles and message them directly.
   - up to 9 optional gallery photos
   - saved to MongoDB, reloads after a page refresh
 - New accounts start on profile setup; after saving they land on the feed
-- Images are stored in Cloudinary in production, or in `server/uploads/` for
-  local development
+- Images are stored in MongoDB in production, or in `server/uploads/` for
+  local development. Cloudinary is optional.
 
 ## Requirements
 
@@ -75,15 +75,18 @@ The recommended free setup is:
 
 - **Vercel** for the Vite frontend
 - **Back4App Containers** for the Express API and Socket.IO server
-- **Cloudinary** for image uploads (Back4App's container filesystem is temporary)
-- **MongoDB Atlas** for the database
+- **MongoDB Atlas** for the database and image storage
 
-### 1. Cloudinary
+Images are stored in an `images` collection in Atlas when the API runs in
+production. Atlas's free tier includes 512 MB; images are limited to 4 MB each.
+For a larger app, add Cloudinary as an optional CDN.
+
+### 1. Optional Cloudinary
 
 Create a free Cloudinary account, open the dashboard and copy the
 `CLOUDINARY_URL` environment variable (`cloudinary://key:secret@cloud-name`).
-Backend uploads use it automatically; without it, images are saved to
-`server/uploads/` for local development only.
+When it is present, backend uploads use Cloudinary instead of Atlas. This is
+not required.
 
 ### 2. Back4App API
 
@@ -100,11 +103,12 @@ WebSockets.
    ```env
    MONGODB_URI=mongodb+srv://...
    JWT_SECRET=a-long-random-string
-   CLOUDINARY_URL=cloudinary://...
    NODE_ENV=production
    ```
 
    Back4App provides `PORT=8080`; the Dockerfile and API use it automatically.
+   `CLOUDINARY_URL` is optional and only needed if you want to use Cloudinary
+   instead of Atlas for image storage.
 5. Deploy and wait for the build to finish. The container URL looks like
    `https://vibely-api.b4a.run`.
 
@@ -131,8 +135,8 @@ values are exposed to the browser.
 `vercel.json` rewrites client-side routes such as `/feed` and `/messages` back
 to `index.html` so they survive a refresh.
 
-Images uploaded locally before switching to Cloudinary keep `/uploads/...`
-paths. Re-upload them from the profile page after the production API is live.
+Images uploaded locally before deployment keep `/uploads/...` paths. Re-upload
+them from the profile page after the production API is live.
 
 ## Scripts
 
@@ -148,6 +152,7 @@ paths. Re-upload them from the profile page after the production API is live.
 | Method | Route                | Auth | Description                          |
 | ------ | -------------------- | ---- | ------------------------------------ |
 | GET    | `/api/health`        | –    | Health check                         |
+| GET    | `/api/images/:id`    | –    | Serve an image stored in MongoDB     |
 | POST   | `/api/auth/register` | –    | Create account, returns JWT + user   |
 | POST   | `/api/auth/login`    | –    | Sign in, returns JWT + user          |
 | GET    | `/api/auth/me`       | ✓    | Current user (used to restore session)|
