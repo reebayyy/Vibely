@@ -258,6 +258,10 @@ async function storeImage(buffer, extension) {
 // Health
 // ---------------------------------------------------------------------------
 
+app.get('/', (_req, res) => {
+  res.json({ ok: true, service: 'social-app-api' })
+})
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'social-app-api' })
 })
